@@ -1,0 +1,638 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TCP NAT 演练台</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --panel: #16213a;
+      --panel-2: #1d2a47;
+      --line: #2b3a5c;
+      --text: #e6edf7;
+      --muted: #93a4c3;
+      --accent: #5eb1ff;
+      --ok: #3ddc97;
+      --warn: #ffc857;
+      --bad: #ff6b6b;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: radial-gradient(1200px 600px at 20% -10%, #1c2b4d 0%, var(--bg) 60%);
+      color: var(--text);
+      font: 14px/1.55 system-ui, -apple-system, "Segoe UI", "Noto Sans CJK SC", sans-serif;
+    }
+    header {
+      padding: 22px 28px 14px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      flex-wrap: wrap;
+      gap: 14px 28px;
+      align-items: center;
+    }
+    header h1 { margin: 0; font-size: 20px; letter-spacing: .5px; }
+    header .sub { color: var(--muted); font-size: 13px; }
+    .clock {
+      margin-left: auto;
+      font-family: var(--mono);
+      font-size: 15px;
+      color: var(--accent);
+      background: var(--panel);
+      border: 1px solid var(--line);
+      padding: 6px 12px;
+      border-radius: 8px;
+    }
+    main {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+      gap: 16px;
+      padding: 18px 28px 40px;
+      max-width: 1500px;
+      margin: 0 auto;
+    }
+    section.panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 16px 16px 18px;
+      min-width: 0;
+    }
+    section.panel.wide { grid-column: 1 / -1; }
+    h2 {
+      margin: 0 0 12px;
+      font-size: 14px;
+      text-transform: none;
+      letter-spacing: .4px;
+      color: var(--accent);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    h2 .tag { font-size: 11px; color: var(--muted); font-weight: 400; }
+    label { display: block; font-size: 12px; color: var(--muted); margin: 0 0 4px; }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+    input[type=text], input[type=number] {
+      width: 100%;
+      background: #0d1526;
+      color: var(--text);
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      padding: 8px 10px;
+      font-family: var(--mono);
+      font-size: 13px;
+    }
+    input:focus { outline: 2px solid var(--accent); outline-offset: 0; border-color: transparent; }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; }
+    .field { flex: 1 1 120px; min-width: 110px; }
+    .field.grow { flex: 2 1 170px; }
+    button {
+      background: var(--accent);
+      color: #04101f;
+      border: 0;
+      border-radius: 7px;
+      padding: 9px 14px;
+      font-weight: 600;
+      font-size: 13px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    button:hover { filter: brightness(1.1); }
+    button:disabled { opacity: .45; cursor: not-allowed; }
+    button.ghost {
+      background: transparent;
+      color: var(--text);
+      border: 1px solid var(--line);
+      font-weight: 500;
+    }
+    button.danger { background: transparent; color: var(--bad); border: 1px solid #5a2a33; }
+    button.small { padding: 4px 9px; font-size: 12px; }
+    .check { display: flex; gap: 7px; align-items: center; color: var(--muted); font-size: 12px; }
+    .check input { accent-color: var(--accent); }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+    th { color: var(--muted); font-weight: 500; font-size: 12px; }
+    td.mono, .mono { font-family: var(--mono); }
+    tbody tr:last-child td { border-bottom: 0; }
+    .empty { color: var(--muted); font-size: 13px; padding: 8px 2px; }
+    .pill {
+      display: inline-block;
+      padding: 1px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-family: var(--mono);
+      border: 1px solid var(--line);
+      color: var(--muted);
+    }
+    .pill.ok { color: var(--ok); border-color: #235c46; background: #10281f; }
+    .pill.warn { color: var(--warn); border-color: #5c4a1f; background: #2a2310; }
+    .pill.bad { color: var(--bad); border-color: #5c2727; background: #2a1214; }
+    .stat-row { display: flex; gap: 18px; flex-wrap: wrap; margin-bottom: 10px; }
+    .stat { min-width: 90px; }
+    .stat .n { font-family: var(--mono); font-size: 20px; }
+    .stat .k { color: var(--muted); font-size: 12px; }
+    .result {
+      margin-top: 12px;
+      border: 1px dashed var(--line);
+      border-radius: 8px;
+      padding: 12px;
+      background: #0d1526;
+      min-height: 54px;
+      font-size: 13px;
+    }
+    .result.delivered { border-color: #2b6b53; background: #0e211b; }
+    .result.dropped { border-color: #6b3030; background: #241114; }
+    .result .headline { font-weight: 600; margin-bottom: 4px; }
+    .result .kvs { color: var(--muted); font-family: var(--mono); font-size: 12px; word-break: break-all; }
+    .log {
+      max-height: 260px;
+      overflow: auto;
+      font-family: var(--mono);
+      font-size: 12px;
+      background: #0d1526;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px;
+      margin-top: 12px;
+    }
+    .log .entry { padding: 3px 0; border-bottom: 1px dotted #223048; word-break: break-word; }
+    .log .entry:last-child { border-bottom: 0; }
+    .log .t { color: #6f86ad; margin-right: 8px; }
+    .log .ok { color: var(--ok); }
+    .log .warn { color: var(--warn); }
+    .log .bad { color: var(--bad); }
+    .rules { margin: 0; padding-left: 18px; color: var(--muted); font-size: 12.5px; }
+    .rules li { margin: 5px 0; }
+    .hint { color: var(--muted); font-size: 12px; margin-top: 8px; }
+    .toast {
+      position: fixed;
+      right: 20px;
+      bottom: 20px;
+      max-width: 420px;
+      background: #241114;
+      border: 1px solid #6b3030;
+      color: #ffd7d7;
+      padding: 12px 16px;
+      border-radius: 9px;
+      font-size: 13px;
+      box-shadow: 0 10px 30px rgba(0,0,0,.45);
+      opacity: 0;
+      transform: translateY(8px);
+      transition: opacity .18s, transform .18s;
+      pointer-events: none;
+      z-index: 20;
+    }
+    .toast.show { opacity: 1; transform: translateY(0); }
+    @media (max-width: 560px) {
+      header, main { padding-left: 14px; padding-right: 14px; }
+      .grid2, .grid3 { grid-template-columns: 1fr; }
+      .clock { margin-left: 0; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>TCP NAT 演练台</h1>
+      <div class="sub">公网端口复用 / 冷却 / 回包路径体检 · 冷却 {{ cooldown_seconds }} 秒</div>
+    </div>
+    <div class="clock" id="clock">演练时钟 —</div>
+  </header>
+
+  <main>
+    <section class="panel">
+      <h2>1. 公网出口 <span class="tag">先设公网 IP 与端口范围</span></h2>
+      <form id="config-form" autocomplete="off">
+        <div class="row">
+          <div class="field grow">
+            <label for="public-ip">公网 IP</label>
+            <input type="text" id="public-ip" value="203.0.113.10" spellcheck="false">
+          </div>
+          <div class="field">
+            <label for="port-min">起始端口</label>
+            <input type="number" id="port-min" value="40000" min="1" max="65535">
+          </div>
+          <div class="field">
+            <label for="port-max">结束端口</label>
+            <input type="number" id="port-max" value="40009" min="1" max="65535">
+          </div>
+        </div>
+        <div class="row" style="margin-top:10px">
+          <label class="check"><input type="checkbox" id="config-replace"> 清空演练数据后应用</label>
+          <button type="submit">应用公网配置</button>
+          <button type="button" class="ghost" id="reset-btn">清空演练数据</button>
+        </div>
+        <div class="hint">端口范围共 <span class="mono" id="pool-size">—</span> 个公网端口。</div>
+      </form>
+    </section>
+
+    <section class="panel">
+      <h2>2. 演练时钟 <span class="tag">冷却按演练时间计算</span></h2>
+      <div class="row">
+        <button type="button" class="ghost" data-advance="1">+1 秒</button>
+        <button type="button" class="ghost" data-advance="10">+10 秒</button>
+        <button type="button" class="ghost" data-advance="60">+60 秒</button>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <div class="field grow">
+          <label for="advance-seconds">自定义推进秒数</label>
+          <input type="number" id="advance-seconds" value="30" min="0" step="1">
+        </div>
+        <button type="button" id="advance-btn">推进</button>
+      </div>
+      <div class="hint">推进后到期的冷却会自动释放；冷却中的迟包仍会被丢弃。</div>
+    </section>
+
+    <section class="panel wide">
+      <h2>3. 模拟建连 <span class="tag">内网端点 → 上游端点</span></h2>
+      <form id="connect-form" autocomplete="off">
+        <div class="grid2">
+          <div class="row">
+            <div class="field grow">
+              <label for="internal-ip">内网 IP</label>
+              <input type="text" id="internal-ip" value="10.0.0.21" spellcheck="false">
+            </div>
+            <div class="field">
+              <label for="internal-port">内网端口</label>
+              <input type="number" id="internal-port" value="51515" min="1" max="65535">
+            </div>
+          </div>
+          <div class="row">
+            <div class="field grow">
+              <label for="upstream-ip">上游 IP</label>
+              <input type="text" id="upstream-ip" value="198.51.100.7" spellcheck="false">
+            </div>
+            <div class="field">
+              <label for="upstream-port">上游端口</label>
+              <input type="number" id="upstream-port" value="443" min="1" max="65535">
+            </div>
+          </div>
+        </div>
+        <div class="row" style="margin-top:10px">
+          <button type="submit">建立连接</button>
+          <span class="hint" style="margin:0">分到的公网端口会出现在下方连接表和日志中。</span>
+        </div>
+      </form>
+    </section>
+
+    <section class="panel wide">
+      <h2>4. 上游端口占用 <span class="tag">耗尽时显示在用 / 冷却数量</span></h2>
+      <div id="upstreams"><div class="empty">尚未设置公网配置。</div></div>
+    </section>
+
+    <section class="panel wide">
+      <h2>5. 活动连接</h2>
+      <div class="stat-row" id="connection-stats"></div>
+      <div id="connections"><div class="empty">暂无活动连接。</div></div>
+    </section>
+
+    <section class="panel wide">
+      <h2>6. 冷却中的端口</h2>
+      <div id="cooldowns"><div class="empty">暂无冷却记录。</div></div>
+    </section>
+
+    <section class="panel wide">
+      <h2>7. 模拟上游回包 <span class="tag">指定上游 → 公网端口</span></h2>
+      <form id="reply-form" autocomplete="off">
+        <div class="grid3">
+          <div class="field">
+            <label for="reply-upstream-ip">上游 IP</label>
+            <input type="text" id="reply-upstream-ip" value="198.51.100.7" spellcheck="false">
+          </div>
+          <div class="field">
+            <label for="reply-upstream-port">上游端口</label>
+            <input type="number" id="reply-upstream-port" value="443" min="1" max="65535">
+          </div>
+          <div class="field">
+            <label for="reply-public-port">公网端口</label>
+            <input type="number" id="reply-public-port" value="40000" min="1" max="65535">
+          </div>
+        </div>
+        <div class="row" style="margin-top:10px">
+          <button type="submit">发送回包</button>
+        </div>
+      </form>
+      <div class="result" id="reply-result">等待发送回包。送达时会显示内网端点，丢弃时会显示原因。</div>
+    </section>
+
+    <section class="panel wide">
+      <h2>8. 演练日志</h2>
+      <div class="row">
+        <button type="button" class="ghost small" id="clear-log">清空日志</button>
+      </div>
+      <div class="log" id="log"></div>
+    </section>
+
+    <section class="panel wide">
+      <h2>演练规则</h2>
+      <ul class="rules">
+        <li>公网端口按“公网端口 + 上游端点”复用：不同上游端点可以占用同一个公网端口。</li>
+        <li>同一上游端点的连接即使并发建立，也一定分到不同的公网端口。</li>
+        <li>连接关闭后，“公网端口 + 原上游端点”冷却 {{ cooldown_seconds }} 秒，期间不得再分配给该上游；其他上游可立即使用该端口。</li>
+        <li>上游回包必须命中“公网端口 + 上游端点”的当前映射；冷却中的迟包一律丢弃。</li>
+        <li>耗尽时按上游列出在用与冷却的端口数量，并给出可推进的时间。</li>
+      </ul>
+    </section>
+  </main>
+
+  <div class="toast" id="toast" role="alert"></div>
+
+  <script>
+    "use strict";
+
+    const state = { snapshot: null };
+    const $ = (id) => document.getElementById(id);
+    const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (c) => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+    }[c]));
+
+    let toastTimer = null;
+    function toast(message) {
+      const el = $("toast");
+      el.textContent = message;
+      el.classList.add("show");
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => el.classList.remove("show"), 4200);
+    }
+
+    function log(message, tone) {
+      const box = $("log");
+      const entry = document.createElement("div");
+      entry.className = "entry";
+      const now = state.snapshot ? state.snapshot.clock.label : "";
+      entry.innerHTML = `<span class="t">${esc(now)}</span><span class="${esc(tone || "")}">${esc(message)}</span>`;
+      box.prepend(entry);
+      while (box.children.length > 200) box.removeChild(box.lastChild);
+    }
+
+    async function api(path, options) {
+      const response = await fetch(path, Object.assign({ headers: { "Content-Type": "application/json" } }, options));
+      let body = null;
+      try { body = await response.json(); } catch (err) { body = null; }
+      if (!response.ok) {
+        const err = (body && body.error) || { message: `HTTP ${response.status}` };
+        const error = new Error(err.message || "请求失败");
+        error.detail = err;
+        throw error;
+      }
+      return body;
+    }
+
+    function post(path, payload) {
+      return api(path, { method: "POST", body: JSON.stringify(payload || {}) });
+    }
+
+    function numbers(list) {
+      if (!list || !list.length) return "—";
+      return list.join(", ");
+    }
+
+    function render(snapshot) {
+      state.snapshot = snapshot;
+      const clock = snapshot.clock;
+      $("clock").textContent = `演练时钟 ${clock.label}（${clock.now}s，冷却 ${clock.cooldown_seconds}s）`;
+
+      const config = snapshot.config;
+      $("pool-size").textContent = config ? String(config.size) : "—";
+      // 只在首次渲染时回填表单，避免用户正在输入时被轮询覆盖。
+      if (config && !state.formInitialized) {
+        $("public-ip").value = config.public_ip;
+        $("port-min").value = config.port_min;
+        $("port-max").value = config.port_max;
+        state.formInitialized = true;
+      }
+
+      const conns = snapshot.connections;
+      $("connection-stats").innerHTML = `
+        <div class="stat"><div class="n">${snapshot.summary.active_connections}</div><div class="k">活动连接</div></div>
+        <div class="stat"><div class="n">${snapshot.summary.cooldowns}</div><div class="k">冷却组合</div></div>
+        <div class="stat"><div class="n">${snapshot.summary.upstreams}</div><div class="k">涉及上游</div></div>
+        <div class="stat"><div class="n">${config ? config.size : "—"}</div><div class="k">公网端口池</div></div>`;
+
+      renderUpstreams(snapshot);
+      renderConnections(conns);
+      renderCooldowns(snapshot.cooldowns);
+    }
+
+    function renderUpstreams(snapshot) {
+      const box = $("upstreams");
+      if (!snapshot.upstreams.length) {
+        box.innerHTML = `<div class="empty">${snapshot.config ? "尚无占用。建立连接后按上游统计。" : "尚未设置公网配置。"}</div>`;
+        return;
+      }
+      const rows = snapshot.upstreams.map((item) => {
+        const status = item.exhausted
+          ? `<span class="pill bad">已耗尽</span>`
+          : `<span class="pill ok">可用 ${item.available_count}</span>`;
+        return `<tr>
+          <td class="mono">${esc(item.upstream.label)}</td>
+          <td class="mono">${item.active_count}</td>
+          <td class="mono">${item.cooling_count}</td>
+          <td class="mono">${item.blocked_count} / ${item.capacity}</td>
+          <td>${status}</td>
+          <td class="mono">${esc(numbers(item.active_ports))}</td>
+          <td class="mono">${esc(numbers(item.cooling_ports))}</td>
+        </tr>`;
+      }).join("");
+      box.innerHTML = `<table>
+        <thead><tr>
+          <th>上游端点</th><th>在用端口数</th><th>冷却端口数</th><th>占用 / 容量</th><th>状态</th><th>在用公网端口</th><th>冷却中公网端口</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+    }
+
+    function renderConnections(conns) {
+      const box = $("connections");
+      if (!conns.length) {
+        box.innerHTML = `<div class="empty">暂无活动连接。</div>`;
+        return;
+      }
+      const rows = conns.map((c) => `<tr>
+        <td class="mono">#${c.id}</td>
+        <td class="mono">${esc(c.internal.label)}</td>
+        <td class="mono">${esc(c.upstream.label)}</td>
+        <td class="mono">${c.public ? esc(c.public.label) : "—"}</td>
+        <td class="mono">${esc(c.created_label)}</td>
+        <td class="mono">${c.age_seconds}s</td>
+        <td><button class="danger small" data-close="${c.id}">关闭</button></td>
+      </tr>`).join("");
+      box.innerHTML = `<table>
+        <thead><tr>
+          <th>连接</th><th>内网端点</th><th>上游端点</th><th>公网映射</th><th>建立于</th><th>存活</th><th></th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+    }
+
+    function renderCooldowns(cooldowns) {
+      const box = $("cooldowns");
+      if (!cooldowns.length) {
+        box.innerHTML = `<div class="empty">暂无冷却记录。</div>`;
+        return;
+      }
+      const rows = cooldowns.map((c) => `<tr>
+        <td class="mono">${esc(c.public ? c.public.label : c.public_port)}</td>
+        <td class="mono">${esc(c.upstream.label)}</td>
+        <td class="mono">${esc(c.internal.label)}</td>
+        <td class="mono">#${c.connection_id}</td>
+        <td class="mono">${esc(c.closed_at_label)}</td>
+        <td class="mono">${c.cooldown_until}s</td>
+        <td><span class="pill warn">剩余 ${c.remaining_seconds}s</span></td>
+      </tr>`).join("");
+      box.innerHTML = `<table>
+        <thead><tr>
+          <th>公网端口</th><th>原上游端点</th><th>原内网端点</th><th>连接</th><th>关闭于</th><th>解冻时刻</th><th>剩余</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+    }
+
+    function readNumber(id) {
+      return Number($(id).value);
+    }
+
+    function readFormConfig() {
+      return {
+        public_ip: $("public-ip").value.trim(),
+        port_min: readNumber("port-min"),
+        port_max: readNumber("port-max"),
+        replace: $("config-replace").checked,
+      };
+    }
+
+    function renderReply(result) {
+      const box = $("reply-result");
+      box.className = "result " + (result.outcome === "delivered" ? "delivered" : "dropped");
+      if (result.outcome === "delivered") {
+        box.innerHTML = `
+          <div class="headline" style="color:var(--ok)">✓ 回包送达内网端点</div>
+          <div class="kvs">公网 ${esc(result.public.label)} ← 上游 ${esc(result.upstream.label)}</div>
+          <div class="kvs">送达 ${esc(result.internal.label)}（连接 #${result.connection_id}）· 演练时刻 ${esc(result.at_label)}</div>`;
+      } else {
+        box.innerHTML = `
+          <div class="headline" style="color:var(--bad)">✕ 回包被丢弃 · ${esc(result.reason_code)}</div>
+          <div class="kvs">公网 ${esc(result.public.label)} ← 上游 ${esc(result.upstream.label)}</div>
+          <div class="kvs">${esc(result.reason)}</div>
+          <div class="kvs">演练时刻 ${esc(result.at_label)}</div>`;
+      }
+    }
+
+    async function refresh() {
+      try {
+        render(await api("/api/state"));
+      } catch (err) {
+        toast(err.message);
+      }
+    }
+
+    async function guard(action, label) {
+      try {
+        const body = await action();
+        render(body.snapshot);
+        return body;
+      } catch (err) {
+        const detail = err.detail || {};
+        log(`${label}失败：${err.message}`, "bad");
+        if (detail.code === "NO_PORT_AVAILABLE" && detail.details) {
+          const d = detail.details;
+          log(`耗尽明细：上游 ${d.upstream.label}，在用 ${d.active_count} 个、冷却 ${d.cooling_count} 个，容量 ${d.capacity}（端口 ${d.port_min}-${d.port_max}）`, "warn");
+        }
+        toast(err.message);
+        throw err;
+      }
+    }
+
+    $("config-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const payload = readFormConfig();
+      try {
+        const body = await guard(() => post("/api/config", payload), "应用公网配置");
+        const config = body.snapshot.config;
+        log(`公网配置设为 ${config.public_ip}:${config.port_min}-${config.port_max}（${config.size} 个端口）`, "ok");
+        $("config-replace").checked = false;
+      } catch (err) { /* 已提示 */ }
+    });
+
+    $("reset-btn").addEventListener("click", async () => {
+      if (!confirm("确认清空所有活动连接和冷却记录？")) return;
+      try {
+        const body = await guard(() => post("/api/reset"), "清空演练数据");
+        log(`已清空演练数据：移除 ${body.result.removed} 条连接/冷却记录（保留公网配置与时钟）`, "warn");
+      } catch (err) { /* 已提示 */ }
+    });
+
+    async function advance(seconds) {
+      try {
+        const body = await guard(() => post("/api/clock/advance", { seconds }), "推进演练时钟");
+        log(`演练时钟推进 ${seconds}s → ${body.snapshot.clock.label}；释放冷却 ${body.result.expired_cooldowns} 个组合`, "warn");
+      } catch (err) { /* 已提示 */ }
+    }
+    document.querySelectorAll("[data-advance]").forEach((btn) => {
+      btn.addEventListener("click", () => advance(Number(btn.dataset.advance)));
+    });
+    $("advance-btn").addEventListener("click", () => advance(readNumber("advance-seconds")));
+
+    $("connect-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const payload = {
+        internal_ip: $("internal-ip").value.trim(),
+        internal_port: readNumber("internal-port"),
+        upstream_ip: $("upstream-ip").value.trim(),
+        upstream_port: readNumber("upstream-port"),
+      };
+      try {
+        const body = await guard(() => post("/api/connections", payload), "建立连接");
+        const connection = body.result;
+        log(`连接 #${connection.id} ${connection.internal.label} → ${connection.upstream.label} 分配公网 ${connection.public.label}`, "ok");
+        $("reply-upstream-ip").value = connection.upstream.ip;
+        $("reply-upstream-port").value = connection.upstream.port;
+        $("reply-public-port").value = connection.public.port;
+      } catch (err) { /* 已提示 */ }
+    });
+
+    document.addEventListener("click", async (event) => {
+      const btn = event.target.closest("[data-close]");
+      if (!btn) return;
+      const id = btn.dataset.close;
+      try {
+        const body = await guard(() => post(`/api/connections/${id}/close`), "关闭连接");
+        const cooldown = body.result.cooldown;
+        log(`连接 #${cooldown.connection_id} 关闭；公网 ${cooldown.public_port} + 上游 ${cooldown.upstream.label} 冷却至 ${cooldown.cooldown_until_label}`, "warn");
+      } catch (err) { /* 已提示 */ }
+    });
+
+    $("reply-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const payload = {
+        upstream_ip: $("reply-upstream-ip").value.trim(),
+        upstream_port: readNumber("reply-upstream-port"),
+        public_port: readNumber("reply-public-port"),
+      };
+      try {
+        const body = await post("/api/replies", payload);
+        render(body.snapshot);
+        const result = body.result;
+        renderReply(result);
+        if (result.outcome === "delivered") {
+          log(`回包 上游 ${result.upstream.label} → 公网 ${result.public.port} 送达 ${result.internal.label}（连接 #${result.connection_id}）`, "ok");
+        } else {
+          log(`回包 上游 ${result.upstream.label} → 公网 ${result.public.port} 丢弃：${result.reason_code} · ${result.reason}`, "bad");
+        }
+      } catch (err) {
+        renderReply({ outcome: "dropped", reason_code: "REQUEST_FAILED", reason: err.message, public: { label: "—" }, upstream: { label: "—" }, at_label: "" });
+        log(`回包模拟失败：${err.message}`, "bad");
+        toast(err.message);
+      }
+    });
+
+    $("clear-log").addEventListener("click", () => { $("log").innerHTML = ""; });
+
+    refresh();
+  </script>
+</body>
+</html>
